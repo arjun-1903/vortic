@@ -1,0 +1,9 @@
+yt-dlp
+openai
+pydantic
+fastapi
+uvicorn
+celery
+redis
+imageio-ffmpeg
+python-dotenv

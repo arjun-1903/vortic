@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+downloads/
+clips/
+subtitles/
+transcripts/
+.env
+*.pyc
