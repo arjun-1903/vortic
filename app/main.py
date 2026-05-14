@@ -31,14 +31,9 @@ class ProcessResponse(BaseModel):
 
 @celery_app.task(bind=True, autoretry_for=(Exception,), max_retries=2)
 def process_video_task(self, url: str):
-    """
-    Master Celery task that runs the entire pipeline synchronously.
-    Updates states in Redis so the frontend can track progress.
-    """
+    # run pipeline
     try:
-        # ---------------------------------------------------------
-        # STAGE 1: DOWNLOAD
-        # ---------------------------------------------------------
+        # dl video
         self.update_state(state='PROCESSING', meta={'stage': 'Downloading video...'})
         download_result = downloader.download_video(url)
         
@@ -48,9 +43,7 @@ def process_video_task(self, url: str):
         video_path, duration = download_result
         video_basename = os.path.splitext(os.path.basename(video_path))[0]
         
-        # ---------------------------------------------------------
-        # STAGE 2: TRANSCRIBE
-        # ---------------------------------------------------------
+        # transcribe
         transcript_path = f"transcripts/{video_basename}_transcript.json"
         
         if os.path.exists(transcript_path):
@@ -68,9 +61,7 @@ def process_video_task(self, url: str):
             with open(transcript_path, 'w', encoding='utf-8') as f:
                 json.dump(segments, f, indent=4, ensure_ascii=False)
             
-        # ---------------------------------------------------------
-        # STAGE 3: SELECT CLIPS
-        # ---------------------------------------------------------
+        # get clips
         self.update_state(state='PROCESSING', meta={'stage': 'Selecting clips via GPT-4o-mini...'})
         # select_clips returns (list of ProcessedClip objects, output_clips_path)
         clips, clips_json_path = clip_selector.select_clips(transcript_path)
@@ -78,9 +69,7 @@ def process_video_task(self, url: str):
         if not clips:
             raise Exception("Clip selection failed. LLM might have refused or returned invalid schema.")
             
-        # ---------------------------------------------------------
-        # STAGE 4: RENDER CLIPS
-        # ---------------------------------------------------------
+        # render
         final_video_paths = []
         total_clips = len(clips)
         
@@ -125,17 +114,13 @@ def process_video_task(self, url: str):
 
 @app.post("/process", response_model=ProcessResponse)
 def start_processing(req: ProcessRequest):
-    """
-    Accepts a YouTube URL, triggers the Celery pipeline, and returns immediately.
-    """
+    # start job
     task = process_video_task.delay(req.url)
     return ProcessResponse(job_id=task.id)
 
 @app.get("/status/{job_id}")
 def get_status(job_id: str):
-    """
-    Queries Celery/Redis for the current status of the job.
-    """
+    # check status
     task = process_video_task.AsyncResult(job_id)
     
     if task.state == 'PENDING':

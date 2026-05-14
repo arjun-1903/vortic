@@ -14,7 +14,7 @@ load_dotenv()
 client = OpenAI()
 
 def transcribe_audio_file(file_path: str, offset: float = 0.0) -> List[Dict]:
-    """Transcribes a single audio file and applies the given time offset."""
+    # transcribe single
     segments = []
     max_retries = 3
     import time
@@ -59,10 +59,7 @@ def transcribe_audio_file(file_path: str, offset: float = 0.0) -> List[Dict]:
     return segments
 
 def transcribe_video(file_path: str) -> Optional[List[Dict]]:
-    """
-    Transcribes a video by extracting compressed audio, chunking if necessary,
-    and sending to OpenAI Whisper API.
-    """
+    # transcribe video
     if not os.path.exists(file_path):
         print(f"Error: File not found at {file_path}")
         return None
@@ -74,7 +71,7 @@ def transcribe_video(file_path: str) -> Optional[List[Dict]]:
         print(f"Created temporary directory at {temp_dir}")
         mp3_path = os.path.join(temp_dir, "audio.mp3")
         
-        # 1. Extract audio
+        # extract
         print("Extracting compressed audio...")
         extract_cmd = [
             ffmpeg_exe, "-y", "-i", file_path,
@@ -88,7 +85,7 @@ def transcribe_video(file_path: str) -> Optional[List[Dict]]:
             print(f"FFmpeg audio extraction failed: {e}")
             return None
 
-        # 2. Check size
+        # size check
         file_size = os.path.getsize(mp3_path)
         print(f"Extracted audio size: {file_size / (1024 * 1024):.2f} MB")
         
@@ -113,7 +110,7 @@ def transcribe_video(file_path: str) -> Optional[List[Dict]]:
                 print(f"FFmpeg chunking failed: {e}")
                 return None
                 
-            # Find all chunks
+            # get chunks
             search_pattern = os.path.join(temp_dir, "chunk_*.mp3")
             chunks = sorted(glob.glob(search_pattern))
             print(f"Split into {len(chunks)} chunks. Transcribing...")
@@ -124,7 +121,7 @@ def transcribe_video(file_path: str) -> Optional[List[Dict]]:
                 chunk_segments = transcribe_audio_file(chunk_file, offset=offset)
                 all_segments.extend(chunk_segments)
 
-    # 3. temporary directory is automatically deleted here
+    # cleanup
     print("Cleanup complete.")
     
     if not all_segments:

@@ -4,21 +4,11 @@ import yt_dlp
 import imageio_ffmpeg
 
 def download_video(url: str) -> Optional[Tuple[str, int]]:
-    """
-    Downloads a video from the given URL using yt-dlp.
-    Saves the file as an MP4 in the 'downloads' folder.
-    
-    Args:
-        url: The YouTube (or other platform) video URL.
-        
-    Returns:
-        A tuple containing (file_path: str, duration_in_seconds: int),
-        or None if the download fails due to invalid URL or unavailability.
-    """
+    # dl video
     download_dir = "downloads"
     os.makedirs(download_dir, exist_ok=True)
     
-    # yt-dlp options to prioritize mp4 and merge audio/video if necessary
+    # opts
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': os.path.join(download_dir, '%(id)s.%(ext)s'),
@@ -53,7 +43,7 @@ def download_video(url: str) -> Optional[Tuple[str, int]]:
                     else:
                         expected_path = os.path.abspath(prepared)
 
-                # Validation: check if file exists and is not corrupted (< 1KB)
+                # check size
                 if os.path.exists(expected_path) and os.path.getsize(expected_path) > 1024:
                     return expected_path, duration
                 else:
@@ -73,7 +63,7 @@ def download_video(url: str) -> Optional[Tuple[str, int]]:
     return None
 
 if __name__ == "__main__":
-    # A short, public YouTube video for testing
+    # test
     test_url = "https://www.youtube.com/watch?v=TowEXCJ3XUg" 
     print(f"Starting download for {test_url}...")
     

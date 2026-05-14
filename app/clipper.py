@@ -5,7 +5,7 @@ import json
 import imageio_ffmpeg
 
 def get_video_duration(video_path: str) -> float:
-    """Uses FFmpeg to parse the total duration of the video."""
+    # get duration
     if not os.path.exists(video_path):
         return 0.0
         
@@ -14,14 +14,13 @@ def get_video_duration(video_path: str) -> float:
     cmd = [ffmpeg_exe, "-i", video_path]
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     
-    # FFmpeg logs input info to stderr
-    # Look for Duration: 00:04:05.15
+    # parse output
     match = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", result.stderr)
     if match:
         hours, minutes, seconds = match.groups()
         return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
         
-    # Fallback pattern without decimal seconds
+    # fallback regex
     match = re.search(r"Duration:\s*(\d+):(\d+):(\d+)", result.stderr)
     if match:
         hours, minutes, seconds = match.groups()
@@ -30,15 +29,12 @@ def get_video_duration(video_path: str) -> float:
     return 0.0
 
 def extract_clip(video_path: str, start_time: float, end_time: float, output_path: str) -> bool:
-    """
-    Extracts a clip from the video using FFmpeg stream copy.
-    Returns True if successful and output exists, False otherwise.
-    """
+    # extract clip
     if not os.path.exists(video_path):
         print(f"Error: Video file not found: {video_path}")
         return False
         
-    # 1. Clamp end_time to video duration
+    # clamp end
     duration = get_video_duration(video_path)
     if duration > 0 and end_time > duration:
         print(f"Warning: end_time {end_time:.2f}s exceeds video duration {duration:.2f}s. Clamping.")
@@ -50,13 +46,12 @@ def extract_clip(video_path: str, start_time: float, end_time: float, output_pat
         
     clip_duration = end_time - start_time
     
-    # Ensure output directory exists
+    # make dir
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     
-    # 2. Build FFmpeg command (stream copy)
-    # Placing -ss before -i ensures highly optimized fast-seeking
+    # build cmd
     cmd = [
         ffmpeg_exe, "-y",
         "-ss", str(start_time),
@@ -68,14 +63,14 @@ def extract_clip(video_path: str, start_time: float, end_time: float, output_pat
     
     print(f"Extracting clip to {output_path}...")
     
-    # 3. Execute FFmpeg
+    # exec
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError as e:
         print(f"FFmpeg failed during extraction: {e}")
         return False
         
-    # 4. Validation Layer
+    # validate
     if os.path.exists(output_path):
         file_size = os.path.getsize(output_path)
         if file_size > 0:
@@ -90,7 +85,7 @@ def extract_clip(video_path: str, start_time: float, end_time: float, output_pat
 if __name__ == "__main__":
     import sys
     
-    # Load test files for manual verification
+    # test files
     video_file = "downloads/TowEXCJ3XUg.mp4"
     clips_json = "transcripts/TowEXCJ3XUg_clips.json"
     
@@ -109,10 +104,10 @@ if __name__ == "__main__":
         print("No clips found in JSON.")
         sys.exit(1)
         
-    # Process the first clip
+    # get first
     first_clip = clips[0]
     
-    # Clean up title for a safe filename
+    # clean string
     safe_title = re.sub(r'[\\/*?:"<>|]', "", first_clip["title"]).replace(" ", "_")
     output_filename = f"clips/clip_1_{safe_title}.mp4"
     

@@ -6,10 +6,10 @@ from pydantic import BaseModel, Field, ValidationError
 from openai import OpenAI, OpenAIError
 from dotenv import load_dotenv
 
-# Load environment variables
+# load env
 load_dotenv()
 
-# Initialize the OpenAI client
+# init openai
 client = OpenAI()
 
 class Clip(BaseModel):
@@ -35,7 +35,7 @@ class ProcessedClip(BaseModel):
     warning: Optional[str] = None
 
 def format_transcript(segments: List[dict]) -> str:
-    """Converts a list of segment dictionaries into a readable string for the LLM."""
+    # format text
     formatted = []
     for seg in segments:
         start = seg.get('start', 0.0)
@@ -49,7 +49,7 @@ def select_clips(transcript_path: str) -> Tuple[Optional[List[ProcessedClip]], O
         print(f"Error: File not found at {transcript_path}")
         return None, None
 
-    # Load the transcript JSON
+    # load file
     try:
         with open(transcript_path, 'r', encoding='utf-8') as f:
             segments = json.load(f)
@@ -57,10 +57,10 @@ def select_clips(transcript_path: str) -> Tuple[Optional[List[ProcessedClip]], O
         print(f"Error reading transcript JSON: {e}")
         return None, None
 
-    # Format transcript for the LLM
+    # format
     formatted_transcript = format_transcript(segments)
     
-    # Construct prompts
+    # setup prompt
     system_prompt = (
         "You are an expert video editor and social media manager.\n"
         "Your task is to analyze the provided transcript and identify 10 of the most engaging, "
@@ -74,7 +74,7 @@ def select_clips(transcript_path: str) -> Tuple[Optional[List[ProcessedClip]], O
         "6. Ensure to always check the next segment once you have selected an endtime for your current clip to ensure the clip is complete and flowing naturally. A lot of the times the segments have ended in abrupt pauses and there is usually one or two more words spoken by the speaker that makes the clip complete. Use your judgement to select the best endtime."
     )
     
-    print("Sending transcript to GPT-4o-mini for clip selection...")
+    print("Analyzing transcript...")
     
     max_retries = 2
     import time
@@ -97,7 +97,7 @@ def select_clips(transcript_path: str) -> Tuple[Optional[List[ProcessedClip]], O
                 
             parsed_response = response.choices[0].message.parsed
             
-            # Calculate and print cost
+            # cost check
             if response.usage:
                 prompt_tokens = response.usage.prompt_tokens
                 completion_tokens = response.usage.completion_tokens
@@ -108,9 +108,9 @@ def select_clips(transcript_path: str) -> Tuple[Optional[List[ProcessedClip]], O
             break # Success, exit retry loop
             
         except ValidationError as e:
-            print(f"Attempt {attempt}/{max_retries} - Pydantic Validation Error: {e}")
+            print(f"Attempt {attempt}/{max_retries} - Validation Error: {e}")
             if attempt == max_retries:
-                raise Exception(f"LLM returned invalid schema after {max_retries} attempts.")
+                raise Exception(f"Validation failed after {max_retries} attempts.")
             time.sleep(2 ** attempt)
         except OpenAIError as e:
             print(f"Attempt {attempt}/{max_retries} - OpenAI API Error: {e}")
@@ -123,11 +123,11 @@ def select_clips(transcript_path: str) -> Tuple[Optional[List[ProcessedClip]], O
                 raise Exception(f"Unexpected error in clip selector: {e}")
             time.sleep(2 ** attempt)
             
-    # Final conversion and Filtering to ProcessedClip
+    # process clips
     valid_clips = []
     
     for clip in parsed_response.clips:
-        # Snap LLM timestamps to exact segment boundaries to prevent missing words
+        # snap timestamps
         closest_start = min(segments, key=lambda seg: abs(seg.get('start', 0.0) - clip.start_time))
         closest_end = min(segments, key=lambda seg: abs(seg.get('end', 0.0) - clip.end_time))
         
@@ -158,14 +158,14 @@ def select_clips(transcript_path: str) -> Tuple[Optional[List[ProcessedClip]], O
     valid_clips.sort(key=lambda x: x.score, reverse=True)
     validated_clips = valid_clips[:5]
     
-    # If the LLM failed so horribly that it couldn't even give us 5 valid ones out of 10
+    # check count
     if not validated_clips:
-        print("Warning: LLM failed to generate any valid clips within the 15-90s window.")
+        print("Warning: Failed to generate valid clips.")
         return None, None
         
-    # Save to JSON
+    # save output
     output_path = transcript_path.replace("_transcript.json", "_clips.json")
-    # Fallback if the filename doesn't end with _transcript.json
+    # fallback
     if output_path == transcript_path:
         base, ext = os.path.splitext(transcript_path)
         output_path = f"{base}_clips.json"

@@ -6,7 +6,7 @@ import re
 import imageio_ffmpeg
 
 def format_srt_time(seconds: float) -> str:
-    """Converts a float in seconds to strict SRT timestamp format: HH:MM:SS,mmm"""
+    # format time
     hours = int(seconds // 3600)
     minutes = int((seconds % 3600) // 60)
     secs = int(seconds % 60)
@@ -24,10 +24,7 @@ def format_srt_time(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 def generate_srt(segments: list, start_time: float, end_time: float, srt_path: str) -> bool:
-    """
-    Generates an SRT file for the clip timeframe. 
-    Adjusts all timestamps relative to start_time.
-    """
+    # make srt
     os.makedirs(os.path.dirname(os.path.abspath(srt_path)), exist_ok=True)
     
     srt_content = []
@@ -38,15 +35,15 @@ def generate_srt(segments: list, start_time: float, end_time: float, srt_path: s
         seg_end = seg.get('end', 0.0)
         text = seg.get('text', '').strip()
         
-        # Filter out segments completely outside our clip window
+        # filter out
         if seg_end <= start_time or seg_start >= end_time:
             continue
             
-        # Clamp timestamps to clip boundaries relative to 0.0s
+        # clamp
         adj_start = max(0.0, seg_start - start_time)
         adj_end = min(end_time - start_time, seg_end - start_time)
         
-        # Ignore extremely short subtitle glitches
+        # ignore short
         if adj_end - adj_start < 0.1:
             continue
             
@@ -72,7 +69,7 @@ def render_clip(video_path: str, start_time: float, end_time: float, segments: l
         print(f"Error: Video file not found: {video_path}")
         return False
         
-    # Add 1.5 seconds of padding to prevent abrupt audio cutoffs
+    # add padding
     end_time += 1.5
         
     clip_duration = end_time - start_time
@@ -87,23 +84,22 @@ def render_clip(video_path: str, start_time: float, end_time: float, segments: l
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Source video not found: {video_path}")
     
-    # Define relative SRT path
+    # relative path
     base_name = os.path.splitext(os.path.basename(output_path))[0]
     srt_path = f"subtitles/{base_name}.srt"
     
-    # 1. Generate the subtitle file exactly aligned to 0.0s
+    # gen subtitle
     if not generate_srt(segments, start_time, end_time, srt_path):
         print("Error: Failed to generate subtitles.")
         return False
         
-    # FFmpeg subtitles filter on Windows is notorious for failing with absolute paths.
-    # Using a clean relative path with forward slashes is much safer.
+    # fix path
     safe_srt_path = srt_path.replace("\\", "/")
     
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     
-    # 2. Build FFmpeg command (Re-encode + Crop + Burn Subtitles)
-    # force_style adds nice yellow subtitles with a strong black outline
+    # build cmd
+    # set style
     style = "FontSize=24,PrimaryColour=&H00FFFF,OutlineColour=&H000000,BorderStyle=1,Outline=1,Shadow=1,MarginV=20"
     vf_filter = f"crop=ih*9/16:ih,subtitles={safe_srt_path}:force_style='{style}'"
     
@@ -121,13 +117,13 @@ def render_clip(video_path: str, start_time: float, end_time: float, segments: l
     
     print(f"Rendering clip to {output_path}...")
     
-    # 3. Execute FFmpeg
+    # exec
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError as e:
         raise Exception(f"FFmpeg failed during render: {e}")
         
-    # 4. Validation Layer
+    # validate
     if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
         print(f"Success: Final rendered video saved to {output_path}")
         return True
