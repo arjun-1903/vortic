@@ -30,6 +30,15 @@ Vortic orchestrates a 4-stage pipeline that automatically handles downloading, a
 * **OpenAI GPT-4o-mini**: A cost-effective LLM capable of analyzing narrative flow, finding engaging "hooks", and identifying viral moments using structured JSON.
 * **FFmpeg**: The industry-standard media framework, utilized here for precision audio extraction, frame cropping, and hardcoding `.srt` subtitles natively.
 
+## Demo
+**Youtube Video**
+<img width="1288" height="933" alt="image" src="https://github.com/user-attachments/assets/bed4f598-6ae9-4b78-a0ec-d914326df419" />
+
+
+**Resulting Clip**
+<img width="992" height="907" alt="image" src="https://github.com/user-attachments/assets/330fd489-a1b7-44a4-9524-a5f702421ae6" />
+
+
 ## Setup & Run
 
 ### 1. Prerequisites
