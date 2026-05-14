@@ -51,16 +51,22 @@ def process_video_task(self, url: str):
         # ---------------------------------------------------------
         # STAGE 2: TRANSCRIBE
         # ---------------------------------------------------------
-        self.update_state(state='PROCESSING', meta={'stage': 'Transcribing audio via Whisper...'})
-        segments = transcriber.transcribe_video(video_path)
-        
-        if not segments:
-            raise Exception("Transcription failed or returned no segments.")
-            
-        # Save transcript to disk for clip_selector to use
         transcript_path = f"transcripts/{video_basename}_transcript.json"
-        with open(transcript_path, 'w', encoding='utf-8') as f:
-            json.dump(segments, f, indent=4, ensure_ascii=False)
+        
+        if os.path.exists(transcript_path):
+            self.update_state(state='PROCESSING', meta={'stage': 'Found existing transcript, skipping Whisper API...'})
+            with open(transcript_path, 'r', encoding='utf-8') as f:
+                segments = json.load(f)
+        else:
+            self.update_state(state='PROCESSING', meta={'stage': 'Transcribing audio via Whisper...'})
+            segments = transcriber.transcribe_video(video_path)
+            
+            if not segments:
+                raise Exception("Transcription failed or returned no segments.")
+                
+            # Save transcript to disk for clip_selector to use
+            with open(transcript_path, 'w', encoding='utf-8') as f:
+                json.dump(segments, f, indent=4, ensure_ascii=False)
             
         # ---------------------------------------------------------
         # STAGE 3: SELECT CLIPS

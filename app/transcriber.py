@@ -16,35 +16,46 @@ client = OpenAI()
 def transcribe_audio_file(file_path: str, offset: float = 0.0) -> List[Dict]:
     """Transcribes a single audio file and applies the given time offset."""
     segments = []
-    try:
-        with open(file_path, "rb") as audio_file:
-            response = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="verbose_json"
-            )
+    max_retries = 3
+    import time
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            with open(file_path, "rb") as audio_file:
+                response = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="verbose_json"
+                )
+                
+                if hasattr(response, 'segments') and response.segments:
+                    for segment in response.segments:
+                        if isinstance(segment, dict):
+                            start = segment.get('start', 0.0)
+                            end = segment.get('end', 0.0)
+                            text = segment.get('text', '')
+                        else:
+                            start = getattr(segment, 'start', 0.0)
+                            end = getattr(segment, 'end', 0.0)
+                            text = getattr(segment, 'text', '')
+                            
+                        segments.append({
+                            "start": start + offset,
+                            "end": end + offset,
+                            "text": text.strip()
+                        })
+                return segments # Success, break out of loop
+        except OpenAIError as e:
+            print(f"Attempt {attempt}/{max_retries} - OpenAI API Error for {file_path}: {e}")
+            if attempt == max_retries:
+                raise Exception(f"OpenAI transcription failed after {max_retries} attempts: {e}")
+            time.sleep(2 ** attempt)
+        except Exception as e:
+            print(f"Attempt {attempt}/{max_retries} - Unexpected error for {file_path}: {e}")
+            if attempt == max_retries:
+                raise Exception(f"Unexpected transcription error after {max_retries} attempts: {e}")
+            time.sleep(2 ** attempt)
             
-            if hasattr(response, 'segments') and response.segments:
-                for segment in response.segments:
-                    if isinstance(segment, dict):
-                        start = segment.get('start', 0.0)
-                        end = segment.get('end', 0.0)
-                        text = segment.get('text', '')
-                    else:
-                        start = getattr(segment, 'start', 0.0)
-                        end = getattr(segment, 'end', 0.0)
-                        text = getattr(segment, 'text', '')
-                        
-                    segments.append({
-                        "start": start + offset,
-                        "end": end + offset,
-                        "text": text.strip()
-                    })
-    except OpenAIError as e:
-        print(f"OpenAI API Error for {file_path}: {e}")
-    except Exception as e:
-        print(f"Unexpected error for {file_path}: {e}")
-        
     return segments
 
 def transcribe_video(file_path: str) -> Optional[List[Dict]]:

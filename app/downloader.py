@@ -29,40 +29,48 @@ def download_video(url: str) -> Optional[Tuple[str, int]]:
         'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
     }
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # extract_info downloads the video when download=True
-            info = ydl.extract_info(url, download=True)
-            
-            if not info:
-                return None
-            
-            video_id = info.get('id', 'unknown')
-            duration = info.get('duration', 0)
-            
-            # The exact filepath might vary if merging happened, 
-            # but prepare_filename usually gives the base structure.
-            # Using our outtmpl, the final file should be an mp4.
-            expected_path = os.path.abspath(os.path.join(download_dir, f"{video_id}.mp4"))
-            
-            # Fallback check if for some reason it wasn't named exactly as expected
-            if not os.path.exists(expected_path):
-                prepared = ydl.prepare_filename(info)
-                # If merged into mp4, the extension of prepared might be wrong, so we check
-                base, _ = os.path.splitext(prepared)
-                if os.path.exists(base + ".mp4"):
-                    expected_path = os.path.abspath(base + ".mp4")
-                else:
-                    expected_path = os.path.abspath(prepared)
+    max_retries = 3
+    import time
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                
+                if not info:
+                    return None
+                
+                video_id = info.get('id', 'unknown')
+                duration = info.get('duration', 0)
+                
+                expected_path = os.path.abspath(os.path.join(download_dir, f"{video_id}.mp4"))
+                
+                if not os.path.exists(expected_path):
+                    prepared = ydl.prepare_filename(info)
+                    base, _ = os.path.splitext(prepared)
+                    if os.path.exists(base + ".mp4"):
+                        expected_path = os.path.abspath(base + ".mp4")
+                    else:
+                        expected_path = os.path.abspath(prepared)
 
-            return expected_path, duration
+                # Validation: check if file exists and is not corrupted (< 1KB)
+                if os.path.exists(expected_path) and os.path.getsize(expected_path) > 1024:
+                    return expected_path, duration
+                else:
+                    raise Exception(f"Output file {expected_path} is missing or corrupted.")
+                
+        except yt_dlp.utils.DownloadError as e:
+            print(f"Attempt {attempt}/{max_retries} - Download Error: {e}")
+            if attempt == max_retries:
+                return None
+            time.sleep(2 ** attempt)
+        except Exception as e:
+            print(f"Attempt {attempt}/{max_retries} - Unexpected error: {e}")
+            if attempt == max_retries:
+                return None
+            time.sleep(2 ** attempt)
             
-    except yt_dlp.utils.DownloadError as e:
-        print(f"Download Error: The video is unavailable or the URL is invalid. Details: {e}")
-        return None
-    except Exception as e:
-        print(f"An unexpected error occurred during download: {e}")
-        return None
+    return None
 
 if __name__ == "__main__":
     # A short, public YouTube video for testing

@@ -21,7 +21,7 @@ class Clip(BaseModel):
     clip_type: Literal["viral", "emotional", "controversial", "informative", "funny"] = Field(description="The category of the clip.")
 
 class ClipResponse(BaseModel):
-    clips: List[Clip] = Field(description="Exactly 5 extracted clips.")
+    clips: List[Clip] = Field(description="Exactly 10 extracted clips.")
 
 class ProcessedClip(BaseModel):
     title: str
@@ -63,95 +63,121 @@ def select_clips(transcript_path: str) -> Tuple[Optional[List[ProcessedClip]], O
     # Construct prompts
     system_prompt = (
         "You are an expert video editor and social media manager.\n"
-        "Your task is to analyze the provided transcript and identify exactly 5 of the most engaging, "
-        "standalone segments that would make excellent short-form clips.\n\n"
-        "Guidelines:\n"
-        "- Prefer clips between 15 and 90 seconds.\n"
-        "- Prioritize clips that are self-contained, emotionally/comedically/informationally complete, "
-        "and understandable without surrounding context.\n"
-        "- Always return exactly 5 clips.\n"
-        "- Only return clips shorter than 15 seconds if absolutely no better alternatives exist."
+        "Your task is to analyze the provided transcript and identify 10 of the most engaging, "
+        "standalone viral moments that would make excellent short-form clips.\n\n"
+        "CRITICAL INSTRUCTIONS:\n"
+        "1. DO NOT just pick a single line of text. You MUST group multiple continuous lines together to form a cohesive, flowing narrative.\n"
+        "2. A clip MUST be between 30 and 90 seconds long. Calculate the duration using (end_time - start_time).\n"
+        "3. The `start_time` should be the start of the first line in your chosen block, and `end_time` should be the end of the last line in your block.\n"
+        "4. Prioritize moments that are self-contained, emotionally/comedically/informationally complete, and understandable without surrounding context.\n"
+        "5. Always return exactly 10 clips. We will filter them down later."
+        "6. Ensure to always check the next segment once you have selected an endtime for your current clip to ensure the clip is complete and flowing naturally. A lot of the times the segments have ended in abrupt pauses and there is usually one or two more words spoken by the speaker that makes the clip complete. Use your judgement to select the best endtime."
     )
     
     print("Sending transcript to GPT-4o-mini for clip selection...")
     
-    try:
-        response = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Here is the transcript:\n\n{formatted_transcript}"}
-            ],
-            response_format=ClipResponse,
-            temperature=0.7
-        )
-        
-        if response.choices[0].message.refusal:
-            print(f"Model refused to process the request: {response.choices[0].message.refusal}")
-            return None, None
+    max_retries = 2
+    import time
+    
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = client.beta.chat.completions.parse(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Here is the transcript:\n\n{formatted_transcript}"}
+                ],
+                response_format=ClipResponse,
+                temperature=0.7
+            )
             
-        parsed_response = response.choices[0].message.parsed
-        
-        # Calculate and print cost
-        if response.usage:
-            prompt_tokens = response.usage.prompt_tokens
-            completion_tokens = response.usage.completion_tokens
-            # gpt-4o-mini pricing: $0.15/1M prompt, $0.60/1M completion
-            cost = (prompt_tokens / 1_000_000 * 0.15) + (completion_tokens / 1_000_000 * 0.60)
-            print(f"\n[Token Usage] Prompt: {prompt_tokens} | Completion: {completion_tokens}")
-            print(f"[Estimated Cost] ${cost:.6f}\n")
-            
-        # Backend Validation Layer
-        validated_clips = []
-        for clip in parsed_response.clips:
-            duration = clip.end_time - clip.start_time
-            is_fallback = False
-            warning = None
-            final_score = clip.score
-            
-            if duration < 15.0:
-                is_fallback = True
-                warning = f"Duration {duration:.1f}s is under the 15s threshold."
-                final_score = max(0, clip.score - 10) # Lower score slightly for fallbacks
+            if response.choices[0].message.refusal:
+                print(f"Model refused to process the request: {response.choices[0].message.refusal}")
+                return None, None
                 
-            validated_clips.append(
+            parsed_response = response.choices[0].message.parsed
+            
+            # Calculate and print cost
+            if response.usage:
+                prompt_tokens = response.usage.prompt_tokens
+                completion_tokens = response.usage.completion_tokens
+                cost = (prompt_tokens / 1_000_000 * 0.15) + (completion_tokens / 1_000_000 * 0.60)
+                print(f"\n[Token Usage] Prompt: {prompt_tokens} | Completion: {completion_tokens}")
+                print(f"[Estimated Cost] ${cost:.6f}\n")
+                
+            break # Success, exit retry loop
+            
+        except ValidationError as e:
+            print(f"Attempt {attempt}/{max_retries} - Pydantic Validation Error: {e}")
+            if attempt == max_retries:
+                raise Exception(f"LLM returned invalid schema after {max_retries} attempts.")
+            time.sleep(2 ** attempt)
+        except OpenAIError as e:
+            print(f"Attempt {attempt}/{max_retries} - OpenAI API Error: {e}")
+            if attempt == max_retries:
+                raise Exception(f"OpenAI API failed after {max_retries} attempts: {e}")
+            time.sleep(2 ** attempt)
+        except Exception as e:
+            print(f"Attempt {attempt}/{max_retries} - Unexpected Error: {e}")
+            if attempt == max_retries:
+                raise Exception(f"Unexpected error in clip selector: {e}")
+            time.sleep(2 ** attempt)
+            
+    # Final conversion and Filtering to ProcessedClip
+    valid_clips = []
+    
+    for clip in parsed_response.clips:
+        # Snap LLM timestamps to exact segment boundaries to prevent missing words
+        closest_start = min(segments, key=lambda seg: abs(seg.get('start', 0.0) - clip.start_time))
+        closest_end = min(segments, key=lambda seg: abs(seg.get('end', 0.0) - clip.end_time))
+        
+        start = closest_start.get('start', 0.0)
+        end = closest_end.get('end', 0.0)
+        
+        if start > end:
+            start, end = end, start
+            
+        duration = end - start
+        
+        if duration >= 15.0 and duration <= 90.0:
+            valid_clips.append(
                 ProcessedClip(
                     title=clip.title,
-                    start_time=clip.start_time,
-                    end_time=clip.end_time,
-                    score=final_score,
+                    start_time=start,
+                    end_time=end,
+                    score=clip.score,
                     justification=clip.justification,
                     clip_type=clip.clip_type,
                     duration=duration,
-                    is_fallback=is_fallback,
-                    warning=warning
+                    is_fallback=False,
+                    warning=None
                 )
             )
             
-        # Save to JSON
-        output_path = transcript_path.replace("_transcript.json", "_clips.json")
-        # Fallback if the filename doesn't end with _transcript.json
-        if output_path == transcript_path:
-            base, ext = os.path.splitext(transcript_path)
-            output_path = f"{base}_clips.json"
-            
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump([clip.model_dump() for clip in validated_clips], f, indent=4, ensure_ascii=False)
-            print(f"Saved extracted clips to: {output_path}")
-        except Exception as e:
-            print(f"Error saving clips JSON: {e}")
-            
-        return validated_clips, output_path
-
-    except ValidationError as e:
-        print(f"Pydantic Validation Error: The LLM output did not match the expected schema.\n{e}")
-    except OpenAIError as e:
-        print(f"OpenAI API Error: {e}")
-    except Exception as e:
-        print(f"Unexpected Error: {e}")
+    # Sort by score descending and take the top 5 valid clips
+    valid_clips.sort(key=lambda x: x.score, reverse=True)
+    validated_clips = valid_clips[:5]
+    
+    # If the LLM failed so horribly that it couldn't even give us 5 valid ones out of 10
+    if not validated_clips:
+        print("Warning: LLM failed to generate any valid clips within the 15-90s window.")
+        return None, None
         
-    return None, None
+    # Save to JSON
+    output_path = transcript_path.replace("_transcript.json", "_clips.json")
+    # Fallback if the filename doesn't end with _transcript.json
+    if output_path == transcript_path:
+        base, ext = os.path.splitext(transcript_path)
+        output_path = f"{base}_clips.json"
+        
+    try:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump([clip.model_dump() for clip in validated_clips], f, indent=4, ensure_ascii=False)
+        print(f"Saved extracted clips to: {output_path}")
+    except Exception as e:
+        print(f"Error saving clips JSON: {e}")
+        
+    return validated_clips, output_path
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

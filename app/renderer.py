@@ -72,6 +72,9 @@ def render_clip(video_path: str, start_time: float, end_time: float, segments: l
         print(f"Error: Video file not found: {video_path}")
         return False
         
+    # Add 1.5 seconds of padding to prevent abrupt audio cutoffs
+    end_time += 1.5
+        
     clip_duration = end_time - start_time
     if clip_duration <= 0:
         print("Error: Invalid clip duration.")
@@ -80,6 +83,9 @@ def render_clip(video_path: str, start_time: float, end_time: float, segments: l
     # Setup directories
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     os.makedirs("subtitles", exist_ok=True)
+    
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Source video not found: {video_path}")
     
     # Define relative SRT path
     base_name = os.path.splitext(os.path.basename(output_path))[0]
@@ -119,16 +125,14 @@ def render_clip(video_path: str, start_time: float, end_time: float, segments: l
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError as e:
-        print(f"FFmpeg failed during render: {e}")
-        return False
+        raise Exception(f"FFmpeg failed during render: {e}")
         
     # 4. Validation Layer
     if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
         print(f"Success: Final rendered video saved to {output_path}")
         return True
     else:
-        print("Error: Render completed, but output file is missing or 0 bytes.")
-        return False
+        raise Exception("Render completed, but output file is missing or 0 bytes.")
 
 if __name__ == "__main__":
     # Load test files for manual verification
@@ -157,7 +161,7 @@ if __name__ == "__main__":
     first_clip = clips[0]
     
     # Clean up title for a safe filename
-    safe_title = re.sub(r'[\\/*?:"<>|]', "", first_clip["title"]).replace(" ", "_")
+    safe_title = re.sub(r"[\\/*?:\"<>|!'`]", "", first_clip["title"]).replace(" ", "_")
     output_filename = f"clips/rendered_1_{safe_title}.mp4"
     
     print(f"Testing renderer on: '{first_clip['title']}'")
